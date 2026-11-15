@@ -1,66 +1,103 @@
 using EShopService.Bundles.Domain.Entities;
 using EShopService.Bundles.Domain.Exceptions;
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using EShopService.Bundles.Domain.ValueObjects;
 
 namespace EShopService.Bundles.Domain.Aggregates;
 
 public sealed class Bundle
 {
     private readonly List<BundleItem> _items = new();
-    private readonly List<Guid> _coopArtists = new();
+    private readonly List<Guid> _coopArtistIds = new();
 
-    public Guid Id { get; } = Guid.NewGuid();
-    public Guid PrimaryArtistId { get; }
-    public string Title { get; }
-    public string PackLicenseType { get; }
-    public bool IsArchived { get; private set; }
+    public BundleId Id { get; private set; }
+    public ArtistId PrimaryArtistId { get; private set; }
+    public string Title { get; private set; }
+    public LicenseType PackLicenseType { get; private set; }
+    public Money PersonalPrice { get; private set; } = default!;
+    public Money? CommercialPrice { get; private set; }
+    public BundleStatus Status { get; private set; }
 
+    public bool IsArchived => Status == BundleStatus.Archived;
     public IReadOnlyCollection<BundleItem> Items => _items.AsReadOnly();
-    public IReadOnlyCollection<Guid> CoopArtists => _coopArtists.AsReadOnly();
+    public IReadOnlyCollection<ArtistId> CoopArtists =>
+        _coopArtistIds.Select(id => new ArtistId(id)).ToList().AsReadOnly();
 
-    public Bundle(Guid primaryArtistId, string title, string packLicenseType)
+    private Bundle() => Title = null!; // For EF Core
+
+    public Bundle(
+        ArtistId primaryArtistId,
+        string title,
+        LicenseType packLicenseType,
+        Money personalPrice,
+        Money? commercialPrice = null)
     {
+        if (string.IsNullOrWhiteSpace(title))
+            throw new ArgumentException("Title cannot be empty.", nameof(title));
+
+        // Invariant #12: Commercial price >= Personal price in the same currency
+        if (commercialPrice is not null)
+        {
+            if (commercialPrice.Currency != personalPrice.Currency)
+                throw new InvalidBundlePricingException("Commercial and Personal prices must use the same currency.");
+            if (commercialPrice.Amount < personalPrice.Amount)
+                throw new InvalidBundlePricingException("Commercial price cannot be lower than Personal price.");
+        }
+
+        Id = BundleId.New();
         PrimaryArtistId = primaryArtistId;
-        Title = title;
+        Title = title.Trim();
         PackLicenseType = packLicenseType;
+        PersonalPrice = personalPrice;
+        CommercialPrice = commercialPrice;
+        Status = BundleStatus.Draft;
     }
 
-    public void AddItem(Guid itemId, string name, string licenseType)
+    // Invariant #10: An archived bundle accepts no new items
+    public void AddItem(BundleItemId itemId, string name, LicenseType license)
     {
-        if (IsArchived)
-            throw new BundleArchivedException(Id);
+        if (Status == BundleStatus.Archived)
+            throw new BundleArchivedException(Id.Value);
 
-        if (!string.Equals(licenseType, PackLicenseType, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidLicenseException(licenseType, PackLicenseType);
+        if (license != PackLicenseType)
+            throw new InvalidLicenseException(license.ToString(), PackLicenseType.ToString());
 
-        _items.Add(new BundleItem(itemId, name, licenseType));
+        _items.Add(new BundleItem(itemId, name, license));
     }
 
-    public void AddCoopArtist(Guid artistId)
+    // Invariant #11: A bundle can be published only if it contains at least one item
+    public void Publish()
     {
-        if (IsArchived)
-            throw new BundleArchivedException(Id);
+        if (Status == BundleStatus.Archived)
+            throw new BundleArchivedException(Id.Value);
+        if (_items.Count == 0)
+            throw new EmptyBundleException(Id.Value);
 
-        if (!_coopArtists.Contains(artistId))
-            _coopArtists.Add(artistId);
+        Status = BundleStatus.Published;
     }
 
-    public void RemoveReportedItem(Guid itemId)
+    public void AddCoopArtist(ArtistId artistId)
+    {
+        if (Status == BundleStatus.Archived)
+            throw new BundleArchivedException(Id.Value);
+
+        if (!_coopArtistIds.Contains(artistId.Value))
+            _coopArtistIds.Add(artistId.Value);
+    }
+
+    public void RemoveReportedItem(BundleItemId itemId)
     {
         var item = _items.FirstOrDefault(i => i.ItemId == itemId);
         item?.MarkAsReported();
     }
 
-    public void Archive() => IsArchived = true;
+    public void Archive() => Status = BundleStatus.Archived;
 
-    public BundleItem GetItem(Guid itemId)
+    public BundleItem GetItem(BundleItemId itemId)
     {
         var item = _items.FirstOrDefault(i => i.ItemId == itemId);
-        if (item != null && item.IsReported)
-            throw new ReportedItemException(itemId);
+        if (item is not null && item.IsReported)
+            throw new ReportedItemException(itemId.Value);
 
-        return item ?? throw new Exception("Item not found.");
+        return item ?? throw new KeyNotFoundException($"Item '{itemId.Value}' was not found.");
     }
 }
