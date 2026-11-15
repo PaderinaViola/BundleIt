@@ -1,85 +1,67 @@
 using EShopService.Bundles.Domain.Aggregates;
 using EShopService.Bundles.Domain.Exceptions;
-using System;
+using EShopService.Bundles.Domain.ValueObjects;
 using Xunit;
 
 namespace EShopService.Bundles.Domain.Tests;
 
-public class BundleTests
+public sealed class BundleTests
 {
     [Fact]
-    public void AddItem_WhenBundleIsActive_AddsItemSuccessfully()
+    public void AddItem_WithMatchingLicense_AddsItemToBundle()
     {
-        // Arrange
-        var bundle = new Bundle(Guid.NewGuid(), "Concept Art Pack", "Commercial");
+        var bundle = new Bundle(ArtistId.New(), "Inktober 2026", LicenseType.Commercial, Money.Of(20m, "EUR"));
+        var itemId = BundleItemId.New();
 
-        // Act
-        bundle.AddItem(Guid.NewGuid(), "Environment Sketch", "Commercial");
+        bundle.AddItem(itemId, "Brush Pack", LicenseType.Commercial);
 
-        // Assert
         Assert.Single(bundle.Items);
+        Assert.Equal(itemId, bundle.Items.First().ItemId);
     }
 
     [Fact]
-    public void AddItem_WhenBundleIsArchived_ThrowsBundleArchivedException()
+    public void AddItem_WithMismatchedLicense_ThrowsInvalidLicenseException()
     {
-        // Arrange
-        var bundle = new Bundle(Guid.NewGuid(), "Season 1 Art", "Personal");
-        bundle.Archive();
-        var itemId = Guid.NewGuid();
+        var bundle = new Bundle(ArtistId.New(), "Inktober 2026", LicenseType.Commercial, Money.Of(20m, "EUR"));
 
-        // Act & Assert
-        var ex = Assert.Throws<BundleArchivedException>(() =>
-            bundle.AddItem(itemId, "Late Submission", "Personal"));
-
-        Assert.Equal("bundle.archived", ex.Code);
-        Assert.Equal(bundle.Id, ex.BundleId);
-    }
-
-    [Theory]
-    [InlineData("Personal", "Commercial")]
-    [InlineData("Commercial", "Personal")]
-    public void AddItem_WhenLicenseMismatch_ThrowsInvalidLicenseException(string bundleLicense, string itemLicense)
-    {
-        // Arrange
-        var bundle = new Bundle(Guid.NewGuid(), "Mixed Pack", bundleLicense);
-
-        // Act & Assert
-        var ex = Assert.Throws<InvalidLicenseException>(() =>
-            bundle.AddItem(Guid.NewGuid(), "Asset", itemLicense));
-
-        Assert.Equal("bundle.invalid_license", ex.Code);
-        Assert.Equal(itemLicense, ex.AttemptedLicense);
-        Assert.Equal(bundleLicense, ex.RequiredLicense);
+        Assert.Throws<InvalidLicenseException>(() =>
+            bundle.AddItem(BundleItemId.New(), "Personal Sketch", LicenseType.Personal));
     }
 
     [Fact]
-    public void AddCoopArtist_WhenBundleIsArchived_ThrowsBundleArchivedException()
+    public void AddItem_WhenArchived_ThrowsBundleArchivedException()
     {
-        // Arrange
-        var bundle = new Bundle(Guid.NewGuid(), "Collab Pack", "Commercial");
+        var bundle = new Bundle(ArtistId.New(), "Inktober 2026", LicenseType.Personal, Money.Of(15m, "EUR"));
         bundle.Archive();
 
-        // Act & Assert
-        var ex = Assert.Throws<BundleArchivedException>(() =>
-            bundle.AddCoopArtist(Guid.NewGuid()));
-
-        Assert.Equal("bundle.archived", ex.Code);
+        Assert.Throws<BundleArchivedException>(() =>
+            bundle.AddItem(BundleItemId.New(), "New Sketch", LicenseType.Personal));
     }
 
     [Fact]
-    public void RemoveReportedItem_WhenInvoked_MarksItemAsReported()
+    public void Publish_WhenEmpty_ThrowsEmptyBundleException()
     {
-        // Arrange
-        var bundle = new Bundle(Guid.NewGuid(), "Sketchbook", "Personal");
-        var itemId = Guid.NewGuid();
-        bundle.AddItem(itemId, "Sketch 1", "Personal");
+        var bundle = new Bundle(ArtistId.New(), "Empty Pack", LicenseType.Personal, Money.Of(15m, "EUR"));
 
-        // Act
+        Assert.Throws<EmptyBundleException>(() => bundle.Publish());
+    }
+
+    [Fact]
+    public void Constructor_WhenCommercialPriceLowerThanPersonal_ThrowsInvalidBundlePricingException()
+    {
+        Assert.Throws<InvalidBundlePricingException>(() =>
+            new Bundle(ArtistId.New(), "Bad Pricing", LicenseType.Commercial, Money.Of(30m, "EUR"), Money.Of(20m, "EUR")));
+    }
+
+    [Fact]
+    public void GetItem_WhenItemWasReported_ThrowsReportedItemException()
+    {
+        var bundle = new Bundle(ArtistId.New(), "Art Pack", LicenseType.Personal, Money.Of(15m, "EUR"));
+        var itemId = BundleItemId.New();
+        bundle.AddItem(itemId, "Copied Art", LicenseType.Personal);
+
         bundle.RemoveReportedItem(itemId);
 
-        // Assert
-        var ex = Assert.Throws<ReportedItemException>(() => bundle.GetItem(itemId));
-        Assert.Equal(itemId, ex.ItemId);
+        Assert.Throws<ReportedItemException>(() => bundle.GetItem(itemId));
     }
 }

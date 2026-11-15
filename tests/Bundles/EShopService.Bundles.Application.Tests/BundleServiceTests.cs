@@ -1,60 +1,43 @@
 using EShopService.Bundles.Application.Repositories;
 using EShopService.Bundles.Application.Services;
 using EShopService.Bundles.Domain.Aggregates;
+using EShopService.Bundles.Domain.Exceptions;
+using EShopService.Bundles.Domain.ValueObjects;
 using Moq;
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 using Xunit;
 
 namespace EShopService.Bundles.Application.Tests;
 
-public class BundleServiceTests
+public sealed class BundleServiceTests
 {
-    private readonly Mock<IBundleRepository> _repositoryMock = new();
-    private readonly BundleService _sut;
-
-    public BundleServiceTests()
-    {
-        _sut = new BundleService(_repositoryMock.Object);
-    }
-
     [Fact]
-    public async Task PublishBundleAsync_WhenValidData_CreatesAndSavesBundle()
+    public async Task CreateBundleAsync_ValidInput_SavesAndReturnsDto()
     {
-        // Arrange
+        var repoMock = new Mock<IBundleRepository>();
+        var service = new BundleService(repoMock.Object);
         var artistId = Guid.NewGuid();
-        var title = "Ultimate 3D Pack";
-        var license = "Commercial";
 
-        // Act
-        var result = await _sut.PublishBundleAsync(artistId, title, license);
+        var result = await service.CreateBundleAsync(artistId, "Fantasy Brushes", "Commercial", 25m, "EUR", 50m);
 
-        // Assert
-        Assert.NotEqual(Guid.Empty, result.BundleId);
-        Assert.Equal(artistId, result.PrimaryArtistId);
-        Assert.Equal(title, result.Title);
-        _repositoryMock.Verify(
-            r => r.SaveAsync(It.Is<Bundle>(b => b.Title == title), It.IsAny<CancellationToken>()),
-            Times.Once);
+        Assert.Equal("Fantasy Brushes", result.Title);
+        Assert.Equal(25m, result.PersonalPrice);
+        Assert.Equal(50m, result.CommercialPrice);
+        repoMock.Verify(r => r.SaveAsync(It.IsAny<Bundle>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task AddItemAsync_WhenBundleExists_UpdatesAndSavesBundle()
+    public async Task AddItemAsync_ArchivedBundle_ThrowsAndNeverSaves()
     {
-        // Arrange
-        var existingBundle = new Bundle(Guid.NewGuid(), "Textures Pack", "Personal");
-        _repositoryMock
-            .Setup(r => r.GetByIdAsync(existingBundle.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(existingBundle);
+        var bundle = new Bundle(ArtistId.New(), "Old Pack", LicenseType.Personal, Money.Of(10m, "EUR"));
+        bundle.Archive();
 
-        // Act
-        var result = await _sut.AddItemAsync(existingBundle.Id, Guid.NewGuid(), "Brick Texture", "Personal");
+        var repoMock = new Mock<IBundleRepository>();
+        repoMock.Setup(r => r.GetByIdAsync(bundle.Id, It.IsAny<CancellationToken>())).ReturnsAsync(bundle);
+        var service = new BundleService(repoMock.Object);
 
-        // Assert
-        Assert.Single(result.Items);
-        _repositoryMock.Verify(
-            r => r.SaveAsync(existingBundle, It.IsAny<CancellationToken>()),
-            Times.Once);
+        await Assert.ThrowsAsync<BundleArchivedException>(() =>
+            service.AddItemAsync(bundle.Id.Value, Guid.NewGuid(), "New File", "Personal"));
+
+        repoMock.Verify(r => r.SaveAsync(It.IsAny<Bundle>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

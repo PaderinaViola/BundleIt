@@ -1,11 +1,7 @@
-using EShopService.Bundles.Application.DTOs;
 using EShopService.Bundles.Application.Services;
 using EShopService.Bundles.Domain.Exceptions;
 using EShopService.Bundles.Presentation.Contracts;
 using Microsoft.AspNetCore.Mvc;
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace EShopService.Bundles.Presentation.Controllers;
 
@@ -15,76 +11,105 @@ public sealed class BundlesController : ControllerBase
 {
     private readonly IBundleService _bundleService;
 
-    public BundlesController(IBundleService bundleService)
-    {
-        _bundleService = bundleService;
-    }
+    public BundlesController(IBundleService bundleService) => _bundleService = bundleService;
 
-    [HttpPost]
-    public async Task<ActionResult<BundleDto>> PublishBundle(
-        [FromBody] PublishBundleRequest request,
-        CancellationToken cancellationToken)
+    [HttpGet]
+    public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
     {
-        var bundle = await _bundleService.PublishBundleAsync(
-            request.PrimaryArtistId,
-            request.Title,
-            request.PackLicenseType,
-            cancellationToken);
-
-        return CreatedAtAction(nameof(GetBundle), new { bundleId = bundle.BundleId }, bundle);
+        var bundles = await _bundleService.GetAllBundlesAsync(cancellationToken);
+        return Ok(bundles);
     }
 
     [HttpGet("{bundleId:guid}")]
-    public async Task<ActionResult<BundleDto>> GetBundle(Guid bundleId, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetById(Guid bundleId, CancellationToken cancellationToken)
     {
         var bundle = await _bundleService.GetBundleAsync(bundleId, cancellationToken);
-        if (bundle is null)
-            return NotFound(new { code = "bundle.not_found", message = $"Bundle '{bundleId}' not found." });
-
-        return Ok(bundle);
+        return bundle is null ? NotFound() : Ok(bundle);
     }
 
-    [HttpPost("{bundleId:guid}/items")]
-    public async Task<ActionResult<BundleDto>> AddItem(
-        Guid bundleId,
-        [FromBody] AddBundleItemRequest request,
-        CancellationToken cancellationToken)
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CreateBundleRequest request, CancellationToken cancellationToken)
     {
         try
         {
-            var updatedBundle = await _bundleService.AddItemAsync(
-                bundleId,
-                request.ItemId,
-                request.Name,
-                request.LicenseType,
+            var created = await _bundleService.CreateBundleAsync(
+                request.PrimaryArtistId,
+                request.Title,
+                request.PackLicenseType,
+                request.PersonalPrice,
+                request.Currency,
+                request.CommercialPrice,
                 cancellationToken);
 
-            return Ok(updatedBundle);
+            return CreatedAtAction(nameof(GetById), new { bundleId = created.BundleId }, created);
         }
         catch (DomainException ex)
         {
-            return MapDomainException(ex);
+            return UnprocessableEntity(new { code = ex.Code, message = ex.Message });
+        }
+    }
+
+    [HttpPost("{bundleId:guid}/items")]
+    public async Task<IActionResult> AddItem(Guid bundleId, [FromBody] AddBundleItemRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var updated = await _bundleService.AddItemAsync(bundleId, request.ItemId, request.Name, request.LicenseType, cancellationToken);
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (DomainException ex)
+        {
+            return UnprocessableEntity(new { code = ex.Code, message = ex.Message });
+        }
+    }
+
+    [HttpPost("{bundleId:guid}/publish")]
+    public async Task<IActionResult> Publish(Guid bundleId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var updated = await _bundleService.PublishBundleAsync(bundleId, cancellationToken);
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (DomainException ex)
+        {
+            return UnprocessableEntity(new { code = ex.Code, message = ex.Message });
         }
     }
 
     [HttpPost("{bundleId:guid}/archive")]
-    public async Task<ActionResult<BundleDto>> ArchiveBundle(Guid bundleId, CancellationToken cancellationToken)
+    public async Task<IActionResult> Archive(Guid bundleId, CancellationToken cancellationToken)
     {
         try
         {
-            var archivedBundle = await _bundleService.ArchiveBundleAsync(bundleId, cancellationToken);
-            return Ok(archivedBundle);
+            var updated = await _bundleService.ArchiveBundleAsync(bundleId, cancellationToken);
+            return Ok(updated);
         }
-        catch (DomainException ex)
+        catch (KeyNotFoundException ex)
         {
-            return MapDomainException(ex);
+            return NotFound(new { message = ex.Message });
         }
     }
 
-    private ActionResult MapDomainException(DomainException ex) => ex switch
+    [HttpDelete("{bundleId:guid}")]
+    public async Task<IActionResult> Delete(Guid bundleId, CancellationToken cancellationToken)
     {
-        BundleArchivedException archiveEx => UnprocessableEntity(new { code = archiveEx.Code, message = archiveEx.Message }),
-        InvalidLicenseException licEx => BadRequest(new { code = licEx.Code, message = licEx.Message }),
-        _ => UnprocessableEntity(new { code = ex.Code, message = ex.Message })
-    };
+        try
+        {
+            await _bundleService.DeleteBundleAsync(bundleId, cancellationToken);
+            return NoContent();
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
 }
