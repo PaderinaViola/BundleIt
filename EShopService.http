@@ -1,19 +1,25 @@
 @host = http://localhost:5284
-# We will fill this in after running the first request!
-@bundleId = 8023a937-9f8f-498d-8cb0-924735a389a4
+@activeBundleId = b4d2b341-df6d-4d37-9f41-99b73bcbcb40
+@archivedBundleId = 7e15c8db-ffe6-4004-bd5d-0e1ebffa7592
 
-### 1. Create a Commercial Bundle (Happy Path)
+### 1. Get all seeded bundles (200 OK)
+GET {{host}}/api/bundles
+
+### 2. Create a new bundle (201 Created)
 POST {{host}}/api/bundles
 Content-Type: application/json
 
 {
   "primaryArtistId": "11111111-1111-1111-1111-111111111111",
-  "title": "Ultimate Concept Art Pack",
-  "packLicenseType": "Commercial"
+  "title": "Watercolor Essentials",
+  "packLicenseType": "Commercial",
+  "personalPrice": 20.00,
+  "currency": "EUR",
+  "commercialPrice": 45.00
 }
 
-### 2. Add a Commercial Item (Happy Path)
-POST {{host}}/api/bundles/{{bundleId}}/items
+### 3. Add a Commercial Item to Active Bundle (200 OK)
+POST {{host}}/api/bundles/{{activeBundleId}}/items
 Content-Type: application/json
 
 {
@@ -22,12 +28,22 @@ Content-Type: application/json
   "licenseType": "Commercial"
 }
 
-### 3. Add a Personal Item to a Commercial Bundle (Business Rule Violation)
-POST {{host}}/api/bundles/{{bundleId}}/items
+### 4. Add a Personal Item to Commercial Bundle (422 Unprocessable Entity)
+POST {{host}}/api/bundles/{{activeBundleId}}/items
 Content-Type: application/json
 
 {
   "itemId": "33333333-3333-3333-3333-333333333333",
   "name": "Personal Sketch",
+  "licenseType": "Personal"
+}
+
+### 5. Add Item to Archived Bundle (422 Unprocessable Entity)
+POST {{host}}/api/bundles/{{archivedBundleId}}/items
+Content-Type: application/json
+
+{
+  "itemId": "55555555-5555-5555-5555-555555555555",
+  "name": "Blocked Sketch",
   "licenseType": "Personal"
 }
