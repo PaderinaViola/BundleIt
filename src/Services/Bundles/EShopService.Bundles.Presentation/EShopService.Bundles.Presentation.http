@@ -1,0 +1,6 @@
+@EShopService.Bundles.Presentation_HostAddress = http://localhost:5284
+
+GET {{EShopService.Bundles.Presentation_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
