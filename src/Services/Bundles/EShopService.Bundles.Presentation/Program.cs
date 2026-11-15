@@ -1,16 +1,21 @@
-using EShopService.Bundles.Application.Repositories;
 using EShopService.Bundles.Application.Services;
-using EShopService.Bundles.Presentation.Infrastructure;
+using EShopService.Bundles.Infrastructure;
+using EShopService.Bundles.Infrastructure.Persistence.Seeders;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-
-// Register DI for Application and In-Memory infrastructure
-builder.Services.AddSingleton<IBundleRepository, InMemoryBundleRepository>();
 builder.Services.AddScoped<IBundleService, BundleService>();
+builder.Services.AddInfrastructure(builder.Configuration);
 
 var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var seeder = scope.ServiceProvider.GetRequiredService<IBundlesDataSeeder>();
+    await seeder.SeedAsync();
+}
 
 app.UseHttpsRedirection();
 app.MapControllers();
