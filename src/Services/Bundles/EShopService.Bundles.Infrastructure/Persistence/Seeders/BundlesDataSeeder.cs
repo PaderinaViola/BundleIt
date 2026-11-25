@@ -13,6 +13,7 @@ public interface IBundlesDataSeeder
 internal sealed class BundlesDataSeeder : IBundlesDataSeeder
 {
     public static readonly Guid DemoArtistId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    public static readonly Guid CoopArtistId = Guid.Parse("99999999-9999-9999-9999-999999999999");
 
     private readonly BundlesDbContext _dbContext;
     private readonly ILogger<BundlesDataSeeder> _logger;
@@ -40,14 +41,30 @@ internal sealed class BundlesDataSeeder : IBundlesDataSeeder
             return;
         }
 
-        // Bundle #1: Active published commercial bundle
+        // Bundle #1: Active published commercial bundle with multiple items & co-op artist
         var activeBundle = new Bundle(
             new ArtistId(DemoArtistId),
             "Inktober 2026 Pro Pack",
             LicenseType.Commercial,
             Money.Of(25.00m, "EUR"),
-            Money.Of(60.00m, "EUR"));
-        activeBundle.AddItem(BundleItemId.New(), "Custom Ink Brushset", LicenseType.Commercial);
+            Money.Of(60.00m, "EUR"),
+            "Complete ink brush set, halftone textures, and layered line-art templates for commercial illustration.");
+
+        activeBundle.AddCoopArtist(new ArtistId(CoopArtistId));
+        activeBundle.AddItem(
+            BundleItemId.New(),
+            "Custom Ink Brushset",
+            LicenseType.Commercial,
+            "45 pressure-sensitive dip pen and nib brushes for Procreate and Photoshop.",
+            "ABR",
+            48_500_000);
+        activeBundle.AddItem(
+            BundleItemId.New(),
+            "Screentone & Paper Textures",
+            LicenseType.Commercial,
+            "300 DPI cold-press paper scans and manga halftone overlays.",
+            "ZIP",
+            124_000_000);
         activeBundle.Publish();
 
         // Bundle #2: Archived bundle (edge-case for testing BundleArchivedException -> HTTP 422)
@@ -55,8 +72,16 @@ internal sealed class BundlesDataSeeder : IBundlesDataSeeder
             new ArtistId(DemoArtistId),
             "Legacy Sketchbook 2024",
             LicenseType.Personal,
-            Money.Of(15.00m, "EUR"));
-        archivedBundle.AddItem(BundleItemId.New(), "Charcoal Studies", LicenseType.Personal);
+            Money.Of(15.00m, "EUR"),
+            description: "Retired 2024 observational figure and charcoal study archive for personal study.");
+
+        archivedBundle.AddItem(
+            BundleItemId.New(),
+            "Charcoal Studies",
+            LicenseType.Personal,
+            "High-resolution scans of 30 traditional charcoal gesture drawings.",
+            "PDF",
+            32_400_000);
         archivedBundle.Publish();
         archivedBundle.Archive();
 
@@ -69,3 +94,20 @@ internal sealed class BundlesDataSeeder : IBundlesDataSeeder
             archivedBundle.Id.Value);
     }
 }
+
+public sealed record CreateBundleRequest(
+    Guid PrimaryArtistId,
+    string Title,
+    string PackLicenseType,
+    decimal PersonalPrice,
+    string Currency,
+    decimal? CommercialPrice = null,
+    string Description = "Digital asset bundle");
+
+public sealed record AddBundleItemRequest(
+    Guid ItemId,
+    string Name,
+    string LicenseType,
+    string Description = "Digital bundle asset",
+    string FileFormat = "ZIP",
+    long FileSizeBytes = 1024);

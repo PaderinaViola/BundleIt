@@ -22,12 +22,15 @@ namespace EShopService.Bundles.Infrastructure.Persistence.Migrations
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     PrimaryArtistId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Title = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: false),
                     PackLicenseType = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
                     PersonalPriceAmount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
                     PersonalPriceCurrency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false),
                     CommercialPriceAmount = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: true),
                     CommercialPriceCurrency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: true),
                     Status = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
+                    CreatedAtUtc = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    PublishedAtUtc = table.Column<DateTime>(type: "datetime2", nullable: true),
                     CoopArtistIds = table.Column<string>(type: "nvarchar(max)", nullable: false)
                 },
                 constraints: table =>
@@ -43,8 +46,12 @@ namespace EShopService.Bundles.Infrastructure.Persistence.Migrations
                     ItemId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     BundleId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Description = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: false),
                     License = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
-                    IsReported = table.Column<bool>(type: "bit", nullable: false)
+                    FileFormat = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
+                    FileSizeBytes = table.Column<long>(type: "bigint", nullable: false),
+                    IsReported = table.Column<bool>(type: "bit", nullable: false),
+                    AddedAtUtc = table.Column<DateTime>(type: "datetime2", nullable: false)
                 },
                 constraints: table =>
                 {

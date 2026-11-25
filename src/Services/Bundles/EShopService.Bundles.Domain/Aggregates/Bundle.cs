@@ -12,27 +12,37 @@ public sealed class Bundle
     public BundleId Id { get; private set; }
     public ArtistId PrimaryArtistId { get; private set; }
     public string Title { get; private set; }
+    public string Description { get; private set; }
     public LicenseType PackLicenseType { get; private set; }
     public Money PersonalPrice { get; private set; } = default!;
     public Money? CommercialPrice { get; private set; }
     public BundleStatus Status { get; private set; }
+    public DateTime CreatedAtUtc { get; private set; }
+    public DateTime? PublishedAtUtc { get; private set; }
 
     public bool IsArchived => Status == BundleStatus.Archived;
     public IReadOnlyCollection<BundleItem> Items => _items.AsReadOnly();
     public IReadOnlyCollection<ArtistId> CoopArtists =>
         _coopArtistIds.Select(id => new ArtistId(id)).ToList().AsReadOnly();
 
-    private Bundle() => Title = null!; // For EF Core
+    private Bundle()
+    {
+        Title = null!;
+        Description = null!;
+    }
 
     public Bundle(
         ArtistId primaryArtistId,
         string title,
         LicenseType packLicenseType,
         Money personalPrice,
-        Money? commercialPrice = null)
+        Money? commercialPrice = null,
+        string description = "Digital asset bundle")
     {
         if (string.IsNullOrWhiteSpace(title))
             throw new ArgumentException("Title cannot be empty.", nameof(title));
+        if (string.IsNullOrWhiteSpace(description))
+            throw new ArgumentException("Description cannot be empty.", nameof(description));
 
         // Invariant #12: Commercial price >= Personal price in the same currency
         if (commercialPrice is not null)
@@ -46,14 +56,22 @@ public sealed class Bundle
         Id = BundleId.New();
         PrimaryArtistId = primaryArtistId;
         Title = title.Trim();
+        Description = description.Trim();
         PackLicenseType = packLicenseType;
         PersonalPrice = personalPrice;
         CommercialPrice = commercialPrice;
         Status = BundleStatus.Draft;
+        CreatedAtUtc = DateTime.UtcNow;
     }
 
     // Invariant #10: An archived bundle accepts no new items
-    public void AddItem(BundleItemId itemId, string name, LicenseType license)
+    public void AddItem(
+        BundleItemId itemId,
+        string name,
+        LicenseType license,
+        string description = "Digital bundle asset",
+        string fileFormat = "ZIP",
+        long fileSizeBytes = 1024)
     {
         if (Status == BundleStatus.Archived)
             throw new BundleArchivedException(Id.Value);
@@ -61,7 +79,7 @@ public sealed class Bundle
         if (license != PackLicenseType)
             throw new InvalidLicenseException(license.ToString(), PackLicenseType.ToString());
 
-        _items.Add(new BundleItem(itemId, name, license));
+        _items.Add(new BundleItem(itemId, name, license, description, fileFormat, fileSizeBytes));
     }
 
     // Invariant #11: A bundle can be published only if it contains at least one item
@@ -73,6 +91,7 @@ public sealed class Bundle
             throw new EmptyBundleException(Id.Value);
 
         Status = BundleStatus.Published;
+        PublishedAtUtc ??= DateTime.UtcNow;
     }
 
     public void AddCoopArtist(ArtistId artistId)
@@ -80,8 +99,16 @@ public sealed class Bundle
         if (Status == BundleStatus.Archived)
             throw new BundleArchivedException(Id.Value);
 
-        if (!_coopArtistIds.Contains(artistId.Value))
+        if (artistId != PrimaryArtistId && !_coopArtistIds.Contains(artistId.Value))
             _coopArtistIds.Add(artistId.Value);
+    }
+
+    public void RemoveCoopArtist(ArtistId artistId)
+    {
+        if (Status == BundleStatus.Archived)
+            throw new BundleArchivedException(Id.Value);
+
+        _coopArtistIds.Remove(artistId.Value);
     }
 
     public void RemoveReportedItem(BundleItemId itemId)

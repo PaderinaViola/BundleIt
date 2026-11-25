@@ -1,0 +1,6 @@
+services:
+  eshopservice.billing.presentation:
+    image: ${DOCKER_REGISTRY-}eshopservicebillingpresentation
+    build:
+      context: .
+      dockerfile: src/Services/Billing/EShopService.Billing.Presentation/Dockerfile

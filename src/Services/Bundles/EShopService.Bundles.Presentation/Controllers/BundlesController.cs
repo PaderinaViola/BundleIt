@@ -39,6 +39,7 @@ public sealed class BundlesController : ControllerBase
                 request.PersonalPrice,
                 request.Currency,
                 request.CommercialPrice,
+                request.Description,
                 cancellationToken);
 
             return CreatedAtAction(nameof(GetById), new { bundleId = created.BundleId }, created);
@@ -54,7 +55,16 @@ public sealed class BundlesController : ControllerBase
     {
         try
         {
-            var updated = await _bundleService.AddItemAsync(bundleId, request.ItemId, request.Name, request.LicenseType, cancellationToken);
+            var updated = await _bundleService.AddItemAsync(
+                bundleId,
+                request.ItemId,
+                request.Name,
+                request.LicenseType,
+                request.Description,
+                request.FileFormat,
+                request.FileSizeBytes,
+                cancellationToken);
+
             return Ok(updated);
         }
         catch (KeyNotFoundException ex)

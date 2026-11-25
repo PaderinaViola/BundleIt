@@ -7,10 +7,29 @@ namespace EShopService.Bundles.Application.Services;
 
 public interface IBundleService
 {
-    Task<BundleDto> CreateBundleAsync(Guid primaryArtistId, string title, string packLicenseType, decimal personalPrice, string currency, decimal? commercialPrice = null, CancellationToken cancellationToken = default);
+    Task<BundleDto> CreateBundleAsync(
+        Guid primaryArtistId,
+        string title,
+        string packLicenseType,
+        decimal personalPrice,
+        string currency,
+        decimal? commercialPrice = null,
+        string description = "Digital asset bundle",
+        CancellationToken cancellationToken = default);
+
     Task<BundleDto?> GetBundleAsync(Guid bundleId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<BundleDto>> GetAllBundlesAsync(CancellationToken cancellationToken = default);
-    Task<BundleDto> AddItemAsync(Guid bundleId, Guid itemId, string name, string licenseType, CancellationToken cancellationToken = default);
+
+    Task<BundleDto> AddItemAsync(
+        Guid bundleId,
+        Guid itemId,
+        string name,
+        string licenseType,
+        string description = "Digital bundle asset",
+        string fileFormat = "ZIP",
+        long fileSizeBytes = 1024,
+        CancellationToken cancellationToken = default);
+
     Task<BundleDto> PublishBundleAsync(Guid bundleId, CancellationToken cancellationToken = default);
     Task<BundleDto> ArchiveBundleAsync(Guid bundleId, CancellationToken cancellationToken = default);
     Task DeleteBundleAsync(Guid bundleId, CancellationToken cancellationToken = default);
@@ -23,15 +42,27 @@ public sealed class BundleService : IBundleService
     public BundleService(IBundleRepository bundleRepository) => _bundleRepository = bundleRepository;
 
     public async Task<BundleDto> CreateBundleAsync(
-        Guid primaryArtistId, string title, string packLicenseType,
-        decimal personalPrice, string currency, decimal? commercialPrice = null,
+        Guid primaryArtistId,
+        string title,
+        string packLicenseType,
+        decimal personalPrice,
+        string currency,
+        decimal? commercialPrice = null,
+        string description = "Digital asset bundle",
         CancellationToken cancellationToken = default)
     {
         var license = Enum.Parse<LicenseType>(packLicenseType, ignoreCase: true);
         var personalMoney = Money.Of(personalPrice, currency);
         var commercialMoney = commercialPrice.HasValue ? Money.Of(commercialPrice.Value, currency) : null;
 
-        var bundle = new Bundle(new ArtistId(primaryArtistId), title, license, personalMoney, commercialMoney);
+        var bundle = new Bundle(
+            new ArtistId(primaryArtistId),
+            title,
+            license,
+            personalMoney,
+            commercialMoney,
+            description);
+
         await _bundleRepository.SaveAsync(bundle, cancellationToken);
         return MapToDto(bundle);
     }
@@ -48,11 +79,20 @@ public sealed class BundleService : IBundleService
         return bundles.Select(MapToDto).ToList();
     }
 
-    public async Task<BundleDto> AddItemAsync(Guid bundleId, Guid itemId, string name, string licenseType, CancellationToken cancellationToken = default)
+    public async Task<BundleDto> AddItemAsync(
+        Guid bundleId,
+        Guid itemId,
+        string name,
+        string licenseType,
+        string description = "Digital bundle asset",
+        string fileFormat = "ZIP",
+        long fileSizeBytes = 1024,
+        CancellationToken cancellationToken = default)
     {
         var bundle = await GetExistingOrThrowAsync(bundleId, cancellationToken);
         var license = Enum.Parse<LicenseType>(licenseType, ignoreCase: true);
-        bundle.AddItem(new BundleItemId(itemId), name, license);
+
+        bundle.AddItem(new BundleItemId(itemId), name, license, description, fileFormat, fileSizeBytes);
         await _bundleRepository.SaveAsync(bundle, cancellationToken);
         return MapToDto(bundle);
     }
@@ -87,12 +127,23 @@ public sealed class BundleService : IBundleService
         b.Id.Value,
         b.PrimaryArtistId.Value,
         b.Title,
+        b.Description,
         b.PackLicenseType.ToString(),
         b.PersonalPrice.Amount,
         b.PersonalPrice.Currency,
         b.CommercialPrice?.Amount,
         b.Status.ToString(),
-        b.Items.Select(i => new BundleItemDto(i.ItemId.Value, i.Name, i.License.ToString(), i.IsReported)).ToList(),
+        b.CreatedAtUtc,
+        b.PublishedAtUtc,
+        b.Items.Select(i => new BundleItemDto(
+            i.ItemId.Value,
+            i.Name,
+            i.Description,
+            i.License.ToString(),
+            i.FileFormat,
+            i.FileSizeBytes,
+            i.IsReported,
+            i.AddedAtUtc)).ToList(),
         b.CoopArtists.Select(a => a.Value).ToList()
     );
 }

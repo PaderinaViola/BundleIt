@@ -4,11 +4,15 @@ public sealed record CreateBundleRequest(
     Guid PrimaryArtistId,
     string Title,
     string PackLicenseType,
-    decimal PersonalPrice = 10.00m,
-    string Currency = "EUR",
-    decimal? CommercialPrice = null);
+    decimal PersonalPrice,
+    string Currency,
+    decimal? CommercialPrice = null,
+    string Description = "Digital asset bundle");
 
 public sealed record AddBundleItemRequest(
     Guid ItemId,
     string Name,
-    string LicenseType);
+    string LicenseType,
+    string Description = "Digital bundle asset",
+    string FileFormat = "ZIP",
+    long FileSizeBytes = 1024);

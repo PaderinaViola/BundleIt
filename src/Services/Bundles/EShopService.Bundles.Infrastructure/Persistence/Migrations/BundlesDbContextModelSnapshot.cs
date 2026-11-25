@@ -27,6 +27,14 @@ namespace EShopService.Bundles.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<string>("PackLicenseType")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -34,6 +42,9 @@ namespace EShopService.Bundles.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("PrimaryArtistId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("PublishedAtUtc")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -114,6 +125,22 @@ namespace EShopService.Bundles.Infrastructure.Persistence.Migrations
 
                             b1.Property<Guid>("ItemId")
                                 .HasColumnType("uniqueidentifier");
+
+                            b1.Property<DateTime>("AddedAtUtc")
+                                .HasColumnType("datetime2");
+
+                            b1.Property<string>("Description")
+                                .IsRequired()
+                                .HasMaxLength(500)
+                                .HasColumnType("nvarchar(500)");
+
+                            b1.Property<string>("FileFormat")
+                                .IsRequired()
+                                .HasMaxLength(20)
+                                .HasColumnType("nvarchar(20)");
+
+                            b1.Property<long>("FileSizeBytes")
+                                .HasColumnType("bigint");
 
                             b1.Property<bool>("IsReported")
                                 .HasColumnType("bit");

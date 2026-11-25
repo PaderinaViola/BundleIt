@@ -28,6 +28,15 @@ internal sealed class BundleConfiguration : IEntityTypeConfiguration<Bundle>
             .HasMaxLength(200)
             .IsRequired();
 
+        builder.Property(b => b.Description)
+            .HasMaxLength(1000)
+            .IsRequired();
+
+        builder.Property(b => b.CreatedAtUtc)
+            .IsRequired();
+
+        builder.Property(b => b.PublishedAtUtc);
+
         // 2. Enums stored as readable strings
         builder.Property(b => b.PackLicenseType)
             .HasConversion<string>()
@@ -79,12 +88,26 @@ internal sealed class BundleConfiguration : IEntityTypeConfiguration<Bundle>
                 .HasMaxLength(200)
                 .IsRequired();
 
+            itemBuilder.Property(i => i.Description)
+                .HasMaxLength(500)
+                .IsRequired();
+
             itemBuilder.Property(i => i.License)
                 .HasConversion<string>()
                 .HasMaxLength(32)
                 .IsRequired();
 
+            itemBuilder.Property(i => i.FileFormat)
+                .HasMaxLength(20)
+                .IsRequired();
+
+            itemBuilder.Property(i => i.FileSizeBytes)
+                .IsRequired();
+
             itemBuilder.Property(i => i.IsReported)
+                .IsRequired();
+
+            itemBuilder.Property(i => i.AddedAtUtc)
                 .IsRequired();
         });
 
