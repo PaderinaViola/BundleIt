@@ -14,6 +14,8 @@ internal sealed class BundlesDataSeeder : IBundlesDataSeeder
 {
     public static readonly Guid DemoArtistId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     public static readonly Guid CoopArtistId = Guid.Parse("99999999-9999-9999-9999-999999999999");
+    public static readonly Guid ActiveBundleId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    public static readonly Guid ArchivedBundleId = Guid.Parse("33333333-3333-3333-3333-333333333333");
 
     private readonly BundlesDbContext _dbContext;
     private readonly ILogger<BundlesDataSeeder> _logger;
@@ -42,6 +44,7 @@ internal sealed class BundlesDataSeeder : IBundlesDataSeeder
         }
 
         // Bundle #1: Active published commercial bundle with multiple items & co-op artist
+        // Using reflection to set the private Id field for deterministic seeding
         var activeBundle = new Bundle(
             new ArtistId(DemoArtistId),
             "Inktober 2026 Pro Pack",
@@ -49,6 +52,9 @@ internal sealed class BundlesDataSeeder : IBundlesDataSeeder
             Money.Of(25.00m, "EUR"),
             Money.Of(60.00m, "EUR"),
             "Complete ink brush set, halftone textures, and layered line-art templates for commercial illustration.");
+
+        // Override the auto-generated ID with a deterministic value for testing
+        typeof(Bundle).GetProperty(nameof(Bundle.Id))?.SetValue(activeBundle, new BundleId(ActiveBundleId));
 
         activeBundle.AddCoopArtist(new ArtistId(CoopArtistId));
         activeBundle.AddItem(
@@ -75,6 +81,8 @@ internal sealed class BundlesDataSeeder : IBundlesDataSeeder
             Money.Of(15.00m, "EUR"),
             description: "Retired 2024 observational figure and charcoal study archive for personal study.");
 
+        typeof(Bundle).GetProperty(nameof(Bundle.Id))?.SetValue(archivedBundle, new BundleId(ArchivedBundleId));
+
         archivedBundle.AddItem(
             BundleItemId.New(),
             "Charcoal Studies",
@@ -89,9 +97,10 @@ internal sealed class BundlesDataSeeder : IBundlesDataSeeder
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
-            "Seeded 2 initial bundles. ActiveBundleId: {ActiveBundleId}, ArchivedBundleId: {ArchivedBundleId}",
+            "Seeded 2 initial bundles. ActiveBundleId: {ActiveBundleId}, ArchivedBundleId: {ArchivedBundleId}, DemoArtistId: {DemoArtistId}",
             activeBundle.Id.Value,
-            archivedBundle.Id.Value);
+            archivedBundle.Id.Value,
+            DemoArtistId);
     }
 }
 

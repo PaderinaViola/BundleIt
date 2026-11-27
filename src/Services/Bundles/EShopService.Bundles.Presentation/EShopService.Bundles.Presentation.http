@@ -1,6 +1,208 @@
-@EShopService.Bundles.Presentation_HostAddress = http://localhost:5284
+### BundleIt Bundles Service - REST API Test Cases
+### This file contains ready-to-run HTTP requests for the Bundles context
+### Use with VS Code REST Client or similar HTTP client
 
-GET {{EShopService.Bundles.Presentation_HostAddress}}/weatherforecast/
+@BaseUrl = http://localhost:5284/api/bundles
+@DemoArtistId = 11111111-1111-1111-1111-111111111111
+@CoopArtistId = 99999999-9999-9999-9999-999999999999
+@ActiveBundleId = 22222222-2222-2222-2222-222222222222
+@ArchivedBundleId = 33333333-3333-3333-3333-333333333333
+
+### ============================================================================
+### 1. GET - Retrieve all seeded bundles (200 OK)
+### Expected: Returns array of 2 bundles (active published + archived)
+### ============================================================================
+GET {{BaseUrl}}
 Accept: application/json
 
+###
+
+### ============================================================================
+### 2. GET - Retrieve the active published bundle (200 OK)
+### Expected: Returns bundle with status "Published", 2 items, 1 co-op artist
+### ============================================================================
+GET {{BaseUrl}}/{{ActiveBundleId}}
+Accept: application/json
+
+###
+
+### ============================================================================
+### 3. GET - Retrieve the archived bundle (200 OK)
+### Expected: Returns bundle with status "Archived", 1 item, no co-op artists
+### ============================================================================
+GET {{BaseUrl}}/{{ArchivedBundleId}}
+Accept: application/json
+
+###
+
+### ============================================================================
+### 4. POST - Create a new bundle (201 Created)
+### Creates a new Personal License bundle with initial pricing
+### Expected: 201 Created with Location header and new bundle data
+### ============================================================================
+POST {{BaseUrl}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "primaryArtistId": "{{DemoArtistId}}",
+  "title": "Digital Illustration 101 Bundle",
+  "packLicenseType": "Personal",
+  "personalPrice": 19.99,
+  "currency": "USD",
+  "commercialPrice": null,
+  "description": "Complete beginner's digital illustration course with 500+ brushes and textures for personal use only."
+}
+
+###
+
+### ============================================================================
+### 5. POST - Add an item to the active bundle (200 OK)
+### Valid state transition: Adding item to existing published bundle
+### Expected: 200 OK with updated bundle containing new item
+### ============================================================================
+POST {{BaseUrl}}/{{ActiveBundleId}}/items
+Content-Type: application/json
+Accept: application/json
+
+{
+  "itemId": "44444444-4444-4444-4444-444444444444",
+  "name": "Advanced Digital Painting Techniques",
+  "licenseType": "Commercial",
+  "description": "Video tutorials and reference materials for professional digital painters",
+  "fileFormat": "ZIP",
+  "fileSizeBytes": 2500000000
+}
+
+###
+
+### ============================================================================
+### 6. POST - Attempt to add item to archived bundle (422 Unprocessable Entity)
+### Business rule violation: Cannot add items to archived bundles (Invariant #10)
+### Expected: 422 with error code "BundleArchived"
+### ============================================================================
+POST {{BaseUrl}}/{{ArchivedBundleId}}/items
+Content-Type: application/json
+Accept: application/json
+
+{
+  "itemId": "55555555-5555-5555-5555-555555555555",
+  "name": "This Should Fail",
+  "licenseType": "Personal",
+  "description": "Cannot add items to archived bundle - should return 422",
+  "fileFormat": "ZIP",
+  "fileSizeBytes": 50000000
+}
+
+###
+
+### ============================================================================
+### 7. POST - Create empty bundle for publishing test (201 Created)
+### Creates a draft bundle with no items
+### Expected: 201 Created with status "Draft"
+### ============================================================================
+POST {{BaseUrl}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "primaryArtistId": "{{DemoArtistId}}",
+  "title": "Empty Bundle For Testing",
+  "packLicenseType": "Commercial",
+  "personalPrice": 50.00,
+  "currency": "EUR",
+  "commercialPrice": 100.00,
+  "description": "This bundle intentionally has no items to test publishing invariant"
+}
+
+###
+
+### ============================================================================
+### 8. POST - Attempt to publish empty bundle (422 Unprocessable Entity)
+### Business rule violation: Bundle must contain at least 1 item (Invariant #11)
+### Expected: 422 with error code "EmptyBundle"
+### Note: Uncomment this after creating the empty bundle in step 7, 
+### then replace {emptyBundleId} with the ID returned from step 7
+### ============================================================================
+# POST {{BaseUrl}}/{emptyBundleId}/publish
+# Accept: application/json
+
+###
+
+### ============================================================================
+### 9. POST - Publish the active bundle (200 OK)
+### Valid state transition: Publish draft bundle with items
+### Note: If the bundle is already published, this will not change state but return 200
+### Expected: 200 OK with updated bundle status "Published"
+### ============================================================================
+# POST {{BaseUrl}}/{{ActiveBundleId}}/publish
+# Accept: application/json
+
+###
+
+### ============================================================================
+### 10. POST - Archive the active bundle (200 OK)
+### Valid state transition: Archive published bundle
+### Expected: 200 OK with updated bundle status "Archived"
+### Note: After archiving, the bundle cannot accept new items (see step 6)
+### ============================================================================
+# POST {{BaseUrl}}/{{ActiveBundleId}}/archive
+# Accept: application/json
+
+###
+
+### ============================================================================
+### 11. DELETE - Delete the active bundle (204 No Content)
+### Removes the bundle and all associated items via cascading delete
+### Expected: 204 No Content (no response body)
+### Note: Uncomment after testing other operations
+### ============================================================================
+# DELETE {{BaseUrl}}/{{ActiveBundleId}}
+# Accept: application/json
+
+###
+
+### ============================================================================
+### 12. GET - Attempt to retrieve deleted bundle (404 Not Found)
+### Expected: 404 Not Found
+### Note: Run this after step 11 to verify deletion
+### ============================================================================
+# GET {{BaseUrl}}/{{ActiveBundleId}}
+# Accept: application/json
+
+###
+
+### ============================================================================
+### ERROR CASES & INVARIANTS TESTED
+### ============================================================================
+### ? Invariant #10: Archived bundle cannot accept new items ? 422 (step 6)
+### ? Invariant #11: Empty bundle cannot be published ? 422 (step 8)
+### ? Invariant #12: Commercial price >= Personal price (enforced in Bundle constructor)
+### ? Invariant #13: License type mismatch between bundle and items (enforced in AddItem)
+### ? Not Found: Requesting non-existent bundle ? 404
+### ? Created: Creating new bundle ? 201 with Location header
+### ? Success: State transitions (publish, archive) ? 200 OK
+### ? No Content: Deleting resource ? 204 No Content
+
+###
+
+### ============================================================================
+### STEP-BY-STEP WORKFLOW INSTRUCTIONS
+### ============================================================================
+### 1. Start the application:
+###    cd src/Services/Bundles/EShopService.Bundles.Presentation
+###    dotnet run
+### 
+### 2. Run request #1 (GET all) - See the 2 seeded bundles
+### 3. Run request #2 (GET active bundle) - Inspect Published bundle with 2 items
+### 4. Run request #3 (GET archived bundle) - Inspect Archived bundle
+### 5. Run request #4 (POST create) - Create new bundle, copy the BundleId from response
+### 6. Run request #5 (POST add item) - Add item to active published bundle
+### 7. Run request #6 (POST add to archived) - Should get 422 error (business rule)
+### 8. Run request #7 (POST create empty) - Create empty bundle, copy BundleId
+### 9. Uncomment/modify request #8, replace {emptyBundleId} - Should get 422 error
+### 10. Uncomment request #9 - Publish the active bundle
+### 11. Uncomment request #10 - Archive the active bundle
+### 12. Uncomment/modify request #11 - Delete with an unused bundle ID
+### 13. Uncomment/modify request #12 - Try to GET deleted bundle ? 404
 ###

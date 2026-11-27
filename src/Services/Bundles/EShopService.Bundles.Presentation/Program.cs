@@ -1,4 +1,5 @@
 using EShopService.Bundles.Application.Services;
+using EShopService.Bundles.Application.Services;
 using EShopService.Bundles.Infrastructure;
 using EShopService.Bundles.Infrastructure.Persistence.Seeders;
 
