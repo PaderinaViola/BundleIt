@@ -1,0 +1,672 @@
+openapi: 3.1.0
+info:
+  title: EShopService Billing & Payouts Microservice API
+  version: 1.0.0
+  description: >
+    Contract-First OpenAPI 3.1 specification (Open Host Service + Published Language)
+    for the Billing & Payouts Bounded Context (EShopService.Billing) of BundleIt.
+    On the system Context Map, Billing / Payouts is a Generic subdomain downstream of
+    Purchasing (Core) via Open Host Service + Published Language, and downstream of the
+    external Payment Gateway and Payout Provider behind an Anti-Corruption Layer (ACL).
+    Enforces Lab 2 Value Object invariants via JSON Schema Draft 2020-12, mandatory
+    Idempotency-Key headers on all POST state transitions, URI versioning (/api/v1/),
+    and IETF RFC 9457 Problem Details error responses.
+
+servers:
+  - url: http://eshopservice-billing-api:8080
+    description: Internal Docker Compose network endpoint (service-to-service communication)
+  - url: http://localhost:5186
+    description: Local ASP.NET Core development server
+
+tags:
+  - name: Payments
+    description: Payment authorization/capture, status queries, and refund execution
+  - name: Payouts
+    description: Artist earnings disbursement operations
+
+paths:
+  /api/v1/payments/authorizations:
+    post:
+      tags: [Payments]
+      summary: Authorize and capture payment for checked-out Purchase lines
+      description: >
+        Captures funds via the external Payment Gateway behind the Billing Anti-Corruption
+        Layer (ACL) and records an immutable Payment receipt. Enforces Invariant #1
+        (captured amount matches Purchase PriceSnapshot) and Invariant #4 (Commercial
+        purchases require valid BillingDetails with TaxId). Safe to retry with the same
+        Idempotency-Key header.
+      operationId: authorizePayment
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+        - $ref: '#/components/parameters/TraceparentHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizePaymentRequest'
+            examples:
+              personalBundlePurchase:
+                summary: Personal-use single bundle checkout (view-only license)
+                value:
+                  buyerId: "b8f4c1a2-3d5e-4f6a-8b9c-0d1e2f3a4b5c"
+                  totalAmount:
+                    amount: 25.00
+                    currency: "EUR"
+                  paymentMethodToken: "pm_tok_visa_4242_sandbox_991a"
+                  allocations:
+                    - purchaseId: "a1b2c3d4-e5f6-4789-a012-3456789abcde"
+                      bundleId: "77777777-1111-4222-8333-444444444444"
+                      licenseType: "Personal"
+                      quantity: 1
+                      allocatedAmount:
+                        amount: 25.00
+                        currency: "EUR"
+              commercialBundlePurchaseWithTaxId:
+                summary: Commercial-license bundle checkout with B2B BillingDetails and Polish NIP
+                value:
+                  buyerId: "c9e5d2b3-4e6f-4a7b-9c0d-1e2f3a4b5c6d"
+                  totalAmount:
+                    amount: 240.00
+                    currency: "EUR"
+                  paymentMethodToken: "pm_tok_mc_5555_sandbox_882b"
+                  billingDetails:
+                    companyName: "Studio Graficzne KrakArt Sp. z o.o."
+                    taxId:
+                      countryCode: "PL"
+                      number: "1234563218"
+                    addressLine: "ul. Rakowicka 27"
+                    postalCode: "31-510"
+                    city: "Krakow"
+                    countryCode: "PL"
+                  allocations:
+                    - purchaseId: "f1e2d3c4-b5a6-4987-8123-456789abcdef"
+                      bundleId: "88888888-2222-4333-9444-555555555555"
+                      licenseType: "Commercial"
+                      quantity: 3
+                      allocatedAmount:
+                        amount: 240.00
+                        currency: "EUR"
+      responses:
+        '200':
+          description: Payment processed (authorized/captured or declined by gateway)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentAuthorizationResponse'
+              examples:
+                capturedPayment:
+                  summary: Successful payment capture translated from gateway response
+                  value:
+                    paymentId: "99999999-aaaa-4bbb-8ccc-dddddddddddd"
+                    authorized: true
+                    status: "Captured"
+                    providerReference: "pi_3Qx9BundleIts001"
+                    failureReasonCode: null
+                    processedAtUtc: "2026-11-27T14:30:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequestProblem'
+        '404':
+          $ref: '#/components/responses/NotFoundProblem'
+        '409':
+          $ref: '#/components/responses/ConflictProblem'
+        '422':
+          $ref: '#/components/responses/UnprocessableDomainProblem'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailableProblem'
+
+  /api/v1/payments/{paymentId}:
+    get:
+      tags: [Payments]
+      summary: Retrieve current payment status and receipt snapshot (CQRS Read Path)
+      description: >
+        Queries the read projection of a Payment aggregate without ORM change tracking.
+        Used by Purchasing to reconcile payment state when an asynchronous webhook or
+        timeout occurs.
+      operationId: getPaymentById
+      parameters:
+        - $ref: '#/components/parameters/PaymentIdPathParam'
+        - $ref: '#/components/parameters/TraceparentHeader'
+      responses:
+        '200':
+          description: Current payment status snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentDetailsResponse'
+              examples:
+                paymentDetails:
+                  summary: Captured payment details
+                  value:
+                    paymentId: "99999999-aaaa-4bbb-8ccc-dddddddddddd"
+                    buyerId: "b8f4c1a2-3d5e-4f6a-8b9c-0d1e2f3a4b5c"
+                    totalAmount:
+                      amount: 25.00
+                      currency: "EUR"
+                    status: "Captured"
+                    createdAtUtc: "2026-11-27T14:30:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequestProblem'
+        '404':
+          $ref: '#/components/responses/NotFoundProblem'
+        '409':
+          $ref: '#/components/responses/ConflictProblem'
+        '422':
+          $ref: '#/components/responses/UnprocessableDomainProblem'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailableProblem'
+
+  /api/v1/payments/{paymentId}/refunds:
+    post:
+      tags: [Payments]
+      summary: Execute a refund for an approved Purchase refund request
+      description: >
+        Disburses funds back to the buyer after Purchasing approves a refund request
+        under PersonalRefundPolicy (0 views) or CommercialRefundPolicy (0 downloads).
+        Idempotent per Idempotency-Key header.
+      operationId: issuePaymentRefund
+      parameters:
+        - $ref: '#/components/parameters/PaymentIdPathParam'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+        - $ref: '#/components/parameters/TraceparentHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundPaymentRequest'
+            examples:
+              approvedUnusedBundleRefund:
+                summary: Full refund for an unused Personal-license bundle within 14 days
+                value:
+                  purchaseId: "a1b2c3d4-e5f6-4789-a012-3456789abcde"
+                  refundAmount:
+                    amount: 25.00
+                    currency: "EUR"
+                  reason: "Buyer requested refund within 14-day window; UsageSummary confirms 0 views."
+      responses:
+        '200':
+          description: Refund confirmed by external payment gateway
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundResponse'
+              examples:
+                completedRefund:
+                  summary: Refund successfully settled
+                  value:
+                    refundId: "11111111-2222-4333-8444-555555555555"
+                    paymentId: "99999999-aaaa-4bbb-8ccc-dddddddddddd"
+                    purchaseId: "a1b2c3d4-e5f6-4789-a012-3456789abcde"
+                    refundedAmount:
+                      amount: 25.00
+                      currency: "EUR"
+                    status: "Refunded"
+                    refundedAtUtc: "2026-11-28T09:15:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequestProblem'
+        '404':
+          $ref: '#/components/responses/NotFoundProblem'
+        '409':
+          $ref: '#/components/responses/ConflictProblem'
+        '422':
+          $ref: '#/components/responses/UnprocessableDomainProblem'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailableProblem'
+
+  /api/v1/payouts/disbursements:
+    post:
+      tags: [Payouts]
+      summary: Request disbursement of available artist earnings
+      description: >
+        Schedules an artist payout transfer via the external Payout Provider ACL.
+        Enforces Lab 2 Invariant #17 (Payout cannot exceed artist's available balance:
+        net sales minus refunds minus earlier payouts).
+      operationId: requestArtistPayout
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+        - $ref: '#/components/parameters/TraceparentHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestPayoutRequest'
+            examples:
+              artistMonthlyPayout:
+                summary: Artist requests disbursement of net bundle sales earnings
+                value:
+                  artistId: "d4e5f6a7-b8c9-4012-9345-6789abcdef01"
+                  requestedAmount:
+                    amount: 450.00
+                    currency: "EUR"
+      responses:
+        '201':
+          description: Payout disbursement accepted and scheduled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutResponse'
+              examples:
+                scheduledPayout:
+                  summary: Payout created and queued with Payout Provider
+                  value:
+                    payoutId: "22222222-3333-4444-8555-666666666666"
+                    artistId: "d4e5f6a7-b8c9-4012-9345-6789abcdef01"
+                    amount:
+                      amount: 450.00
+                      currency: "EUR"
+                    status: "Processing"
+                    requestedAtUtc: "2026-11-28T10:00:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequestProblem'
+        '404':
+          $ref: '#/components/responses/NotFoundProblem'
+        '409':
+          $ref: '#/components/responses/ConflictProblem'
+        '422':
+          $ref: '#/components/responses/UnprocessableDomainProblem'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailableProblem'
+
+components:
+  parameters:
+    PaymentIdPathParam:
+      name: paymentId
+      in: path
+      required: true
+      description: >
+        Strongly typed PaymentId (UUID v4) uniquely identifying a Payment aggregate
+        in the Billing Bounded Context.
+      schema:
+        type: string
+        format: uuid
+      example: "99999999-aaaa-4bbb-8ccc-dddddddddddd"
+
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: >
+        Client-generated UUID v4 guaranteeing idempotent execution across retries
+        (IETF draft-ietf-httpapi-idempotency-key-header). Reusing the same key with
+        an identical payload replays the cached response; reusing it with a different
+        payload returns HTTP 409 / 422.
+      schema:
+        type: string
+        format: uuid
+      example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
+    TraceparentHeader:
+      name: traceparent
+      in: header
+      required: false
+      description: W3C Trace Context propagation header (version-traceId-parentSpanId-flags)
+      schema:
+        type: string
+        pattern: '^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$'
+      example: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+
+  schemas:
+    Money:
+      type: object
+      description: DDD Money Value Object (non-negative amount + ISO 4217 currency from CurrencyCatalog)
+      additionalProperties: false
+      required: [amount, currency]
+      properties:
+        amount:
+          type: number
+          format: decimal
+          minimum: 0.01
+          maximum: 1000000.00
+          description: Monetary value rounded to currency minor units (MidpointRounding.ToEven)
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          enum: [PLN, EUR, USD, GBP, CHF, JPY]
+          description: Supported ISO 4217 currency code from CurrencyCatalog
+
+    Quantity:
+      type: integer
+      description: DDD Quantity Value Object (Lab 2 Invariant: 1..25 items per cart/line)
+      minimum: 1
+      maximum: 25
+
+    LicenseType:
+      type: string
+      description: Closed domain enum distinguishing Personal (view-only) from Commercial (view + download)
+      enum: [Personal, Commercial]
+
+    TaxId:
+      type: object
+      description: DDD TaxId Value Object for B2B Commercial purchases (ISO 3166-1 alpha-2 + normalized number)
+      additionalProperties: false
+      required: [countryCode, number]
+      properties:
+        countryCode:
+          type: string
+          pattern: '^[A-Z]{2}$'
+          description: ISO 3166-1 alpha-2 country code
+        number:
+          type: string
+          pattern: '^[A-Z0-9]{4,20}$'
+          description: Normalized tax identification number (spaces and hyphens stripped)
+
+    BillingDetails:
+      type: object
+      description: DDD BillingDetails Value Object mandatory for Commercial purchases (Invariant #4)
+      additionalProperties: false
+      required: [companyName, taxId, addressLine, postalCode, city, countryCode]
+      properties:
+        companyName:
+          type: string
+          minLength: 2
+          maxLength: 200
+        taxId:
+          $ref: '#/components/schemas/TaxId'
+        addressLine:
+          type: string
+          minLength: 1
+          maxLength: 200
+        postalCode:
+          type: string
+          pattern: '^[A-Za-z0-9 -]{2,12}$'
+        city:
+          type: string
+          minLength: 1
+          maxLength: 100
+        countryCode:
+          type: string
+          pattern: '^[A-Z]{2}$'
+
+    PaymentStatus:
+      type: string
+      description: Lifecycle state of a Payment aggregate
+      enum:
+        - Pending
+        - Authorized
+        - Captured
+        - Declined
+        - Refunded
+        - PartiallyRefunded
+
+    PurchaseAllocationItem:
+      type: object
+      additionalProperties: false
+      required: [purchaseId, bundleId, licenseType, quantity, allocatedAmount]
+      properties:
+        purchaseId:
+          type: string
+          format: uuid
+        bundleId:
+          type: string
+          format: uuid
+        licenseType:
+          $ref: '#/components/schemas/LicenseType'
+        quantity:
+          $ref: '#/components/schemas/Quantity'
+        allocatedAmount:
+          $ref: '#/components/schemas/Money'
+
+    AuthorizePaymentRequest:
+      type: object
+      additionalProperties: false
+      required: [buyerId, totalAmount, paymentMethodToken, allocations]
+      properties:
+        buyerId:
+          type: string
+          format: uuid
+        totalAmount:
+          $ref: '#/components/schemas/Money'
+        paymentMethodToken:
+          type: string
+          minLength: 8
+          maxLength: 256
+          description: Opaque payment token from frontend gateway widget (no raw PANs)
+        billingDetails:
+          $ref: '#/components/schemas/BillingDetails'
+          description: Mandatory when any allocation has licenseType Commercial (Invariant #4)
+        allocations:
+          type: array
+          minItems: 1
+          maxItems: 25
+          description: Cart checkout allocates one Payment across 1..25 Purchase lines
+          items:
+            $ref: '#/components/schemas/PurchaseAllocationItem'
+
+    PaymentAuthorizationResponse:
+      type: object
+      required: [paymentId, authorized, status, processedAtUtc]
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        authorized:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        providerReference:
+          type: string
+          description: External gateway transaction identifier (mapped inside ACL)
+        failureReasonCode:
+          type: [string, 'null']
+          description: Domain-mapped failure code when authorized is false (OpenAPI 3.1 nullable syntax)
+        processedAtUtc:
+          type: string
+          format: date-time
+
+    PaymentDetailsResponse:
+      type: object
+      required: [paymentId, buyerId, totalAmount, status, createdAtUtc]
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        buyerId:
+          type: string
+          format: uuid
+        totalAmount:
+          $ref: '#/components/schemas/Money'
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        invoiceId:
+          type: [string, 'null']
+          format: uuid
+          description: Issued commercial InvoiceId if applicable, or null for Personal purchases
+        createdAtUtc:
+          type: string
+          format: date-time
+
+    RefundPaymentRequest:
+      type: object
+      additionalProperties: false
+      required: [purchaseId, refundAmount, reason]
+      properties:
+        purchaseId:
+          type: string
+          format: uuid
+        refundAmount:
+          $ref: '#/components/schemas/Money'
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 500
+
+    RefundResponse:
+      type: object
+      required: [refundId, paymentId, purchaseId, refundedAmount, status, refundedAtUtc]
+      properties:
+        refundId:
+          type: string
+          format: uuid
+        paymentId:
+          type: string
+          format: uuid
+        purchaseId:
+          type: string
+          format: uuid
+        refundedAmount:
+          $ref: '#/components/schemas/Money'
+        status:
+          type: string
+          enum: [Refunded, Failed]
+        refundedAtUtc:
+          type: string
+          format: date-time
+
+    RequestPayoutRequest:
+      type: object
+      additionalProperties: false
+      required: [artistId, requestedAmount]
+      properties:
+        artistId:
+          type: string
+          format: uuid
+        requestedAmount:
+          $ref: '#/components/schemas/Money'
+
+    PayoutResponse:
+      type: object
+      required: [payoutId, artistId, amount, status, requestedAtUtc]
+      properties:
+        payoutId:
+          type: string
+          format: uuid
+        artistId:
+          type: string
+          format: uuid
+        amount:
+          $ref: '#/components/schemas/Money'
+        status:
+          type: string
+          enum: [Pending, Processing, Paid, Rejected]
+        requestedAtUtc:
+          type: string
+          format: date-time
+
+    ProblemDetails:
+      type: object
+      description: IETF RFC 9457 Problem Details for HTTP APIs with domain extensions
+      required: [type, title, status, detail, errorCode]
+      properties:
+        type:
+          type: string
+          format: uri
+          example: "https://bundleit.io/errors/billing.payment_amount_mismatch"
+        title:
+          type: string
+          example: "Domain rule violation"
+        status:
+          type: integer
+          example: 422
+        detail:
+          type: string
+          example: "Captured amount 20.00 EUR does not match Purchase PriceSnapshot 25.00 EUR."
+        instance:
+          type: string
+          example: "/api/v1/payments/authorizations"
+        errorCode:
+          type: string
+          description: Stable machine-readable DomainException.Code
+          example: "billing.payment_amount_mismatch"
+        traceId:
+          type: [string, 'null']
+          description: W3C distributed trace identifier
+          example: "4bf92f3577b34da6a3ce929d0e0e4736"
+
+  responses:
+    BadRequestProblem:
+      description: Malformed JSON, missing Idempotency-Key header, or Value Object format constraint violation
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            invalidCurrency:
+              summary: Unsupported currency rejected by Money Value Object
+              value:
+                type: "https://bundleit.io/errors/shared.invalid_currency"
+                title: "Invalid request parameter"
+                status: 400
+                detail: "Currency 'BTC' is not supported by CurrencyCatalog."
+                instance: "/api/v1/payments/authorizations"
+                errorCode: "shared.invalid_currency"
+                traceId: "4bf92f3577b34da6a3ce929d0e0e4736"
+
+    NotFoundProblem:
+      description: Requested Payment, Purchase, Artist, or Payout aggregate does not exist
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            paymentNotFound:
+              summary: Payment aggregate not found
+              value:
+                type: "https://bundleit.io/errors/billing.payment_not_found"
+                title: "Resource not found"
+                status: 404
+                detail: "Payment with id '99999999-aaaa-4bbb-8ccc-dddddddddddd' was not found."
+                instance: "/api/v1/payments/99999999-aaaa-4bbb-8ccc-dddddddddddd"
+                errorCode: "billing.payment_not_found"
+                traceId: "4bf92f3577b34da6a3ce929d0e0e4736"
+
+    ConflictProblem:
+      description: Aggregate state conflict or Idempotency-Key reused with a different request payload
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            idempotencyKeyConflict:
+              summary: Idempotency-Key reused with modified payload hash
+              value:
+                type: "https://bundleit.io/errors/billing.idempotency_key_conflict"
+                title: "Idempotency key conflict"
+                status: 409
+                detail: "Idempotency-Key '3fa85f64-5717-4562-b3fc-2c963f66afa6' was already used with a different request body."
+                instance: "/api/v1/payments/authorizations"
+                errorCode: "billing.idempotency_key_conflict"
+                traceId: "4bf92f3577b34da6a3ce929d0e0e4736"
+
+    UnprocessableDomainProblem:
+      description: Business invariant violated (DomainException -> HTTP 422 Unprocessable Content)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            insufficientPayoutBalance:
+              summary: Lab 2 Invariant #17 violated on payout request
+              value:
+                type: "https://bundleit.io/errors/billing.insufficient_payout_balance"
+                title: "Domain rule violation"
+                status: 422
+                detail: "Requested payout 450.00 EUR exceeds artist's available balance of 310.00 EUR."
+                instance: "/api/v1/payouts/disbursements"
+                errorCode: "billing.insufficient_payout_balance"
+                traceId: "4bf92f3577b34da6a3ce929d0e0e4736"
+
+    ServiceUnavailableProblem:
+      description: Upstream external Payment Gateway or Payout Provider unavailable (Circuit Breaker open)
+      headers:
+        Retry-After:
+          description: Suggested wait time in seconds before retrying
+          schema:
+            type: integer
+            example: 15
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            gatewayUnavailable:
+              summary: External payment provider circuit breaker open
+              value:
+                type: "https://bundleit.io/errors/billing.payment_gateway_unavailable"
+                title: "External payment provider unavailable"
+                status: 503
+                detail: "Payment Gateway failed health threshold; circuit breaker is open for 15 seconds."
+                instance: "/api/v1/payments/authorizations"
+                errorCode: "billing.payment_gateway_unavailable"
+                traceId: "4bf92f3577b34da6a3ce929d0e0e4736"
